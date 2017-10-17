@@ -8,7 +8,6 @@ use std::vec::Vec;
 use std::fmt;
 use hex_slice::AsHex;
 use std::convert::TryFrom;
-use std::ffi::CString;
 
 // H110i
 const VENDOR_ID: u16 = 0x1b1c;
@@ -172,10 +171,10 @@ impl fmt::Display for OpCode {
 impl From<OpCode> for u8 {
     fn from(op_code: OpCode) -> u8 {
         match op_code {
-            OpCode::WriteOneByte    => 0x06,
-            OpCode::ReadOneByte     => 0x07,
-            OpCode::WriteTwoBytes   => 0x08,
-            OpCode::ReadTwoBytes    => 0x09,
+            OpCode::WriteOneByte   => 0x06,
+            OpCode::ReadOneByte    => 0x07,
+            OpCode::WriteTwoBytes  => 0x08,
+            OpCode::ReadTwoBytes   => 0x09,
             OpCode::WriteManyBytes => 0x0a,
             OpCode::ReadManyBytes  => 0x0b
         }
@@ -240,7 +239,6 @@ fn main() {
         data: vec![32u8], // read 32-byte product name
     };
 
-    //println!("{}", op.register)
     println!("{}", op);
     cooler.write_op(&op);
 
@@ -248,8 +246,6 @@ fn main() {
         Ok(op) => op,
         Err(e) => panic!("{}", e)
     };
-
-    println!("Product ID: {:?}", String::from_utf8_lossy(&op.data[1..6]))
 }
 
 #[derive(Debug)]
