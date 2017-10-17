@@ -17,6 +17,8 @@ const PRODUCT_ID: u16 = 0x0c04;
 enum Error {
     InvalidRegister(u8),
     InvalidOpCode(u8),
+    InvalidLEDMode(u8),
+    InvalidFanMode(u8),
     ReadError(hidapi::HidError),
 }
 
@@ -25,6 +27,8 @@ impl fmt::Display for Error {
         match *self {
             Error::InvalidRegister(n) => write!(f, "Invalid register byte: 0x{:02x}", n),
             Error::InvalidOpCode(n) => write!(f, "Invalid opcode: 0x{:02x}", n),
+            Error::InvalidLEDMode(n) => write!(f, "Invalid LED mode: 0x{:02x}", n),
+            Error::InvalidFanMode(n) => write!(f, "Invalid fan mode: 0x{:02x}", n),
             Error::ReadError(ref err) => write!(f, "Error reading from USB device: {}", err)
         }
     }
@@ -35,6 +39,8 @@ impl error::Error for Error {
         match *self {
             Error::InvalidRegister(_) => "Invalid register byte found",
             Error::InvalidOpCode(_) => "Invalid opcode byte found",
+            Error::InvalidLEDMode(_) => "Invalid LED mode byte found",
+            Error::InvalidFanMode(_) => "Invalid fan mode byte found",
             Error::ReadError(ref err) => err,
         }
     }
@@ -211,20 +217,76 @@ impl fmt::Display for LedMode {
     }
 }
 
+impl From<LedMode> for u8 {
+    fn from(led_mode: LedMode) -> u8 {
+        match led_mode {
+            LedMode::StaticColor      => 0x00,
+            LedMode::TwoColorCycle    => 0x40,
+            LedMode::FourColorCycle   => 0x80,
+            LedMode::TemperatureColor => 0xC0
+        }
+    }
+}
+
+impl TryFrom<u8> for LedMode {
+    type Error = Error;
+    
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x00 => Ok(LedMode::StaticColor),
+            0x40 => Ok(LedMode::TwoColorCycle),
+            0x80 => Ok(LedMode::FourColorCycle),
+            0xC0 => Ok(LedMode::TemperatureColor),
+            n => Err(Error::InvalidLEDMode(n))
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 enum FanMode {
-    HID_FixedPWM = 0x02,
-    HID_FixedRPM = 0x04,
-    HID_Default = 0x06,
-    HID_Quiet = 0x08,
-    HID_Balanced = 0x0A,
-    HID_Performance = 0x0C,
-    HID_Custom = 0x0E
+    FixedPWM = 0x02,
+    FixedRPM = 0x04,
+    Default = 0x06,
+    Quiet = 0x08,
+    Balanced = 0x0A,
+    Performance = 0x0C,
+    Custom = 0x0E,
 }
 
 impl fmt::Display for FanMode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "0x{:02x}", *self as u8)
+    }
+}
+
+impl From<FanMode> for u8 {
+    fn from(fan_mode: FanMode) -> u8 {
+        match fan_mode {
+            FanMode::FixedPWM    => 0x02,
+            FanMode::FixedRPM    => 0x04,
+            FanMode::Default     => 0x06,
+            FanMode::Quiet       => 0x08,
+            FanMode::Balanced    => 0x0A,
+            FanMode::Performance => 0x0C,
+            FanMode::Custom      => 0x0E
+        }
+    }
+}
+
+impl TryFrom<u8> for FanMode {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x02 => Ok(FanMode::FixedPWM),
+            0x04 => Ok(FanMode::FixedRPM),
+            0x06 => Ok(FanMode::Default),
+            0x08 => Ok(FanMode::Quiet),
+            0x0A => Ok(FanMode::Balanced),
+            0x0C => Ok(FanMode::Performance),
+            0x0E => Ok(FanMode::Custom),
+            n => Err(Error::InvalidFanMode(n))
+        }
     }
 }
 
