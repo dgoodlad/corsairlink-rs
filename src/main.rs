@@ -8,6 +8,7 @@ use std::vec::Vec;
 use std::fmt;
 use hex_slice::AsHex;
 use std::convert::TryFrom;
+use std::ffi::CString;
 
 // H110i
 const VENDOR_ID: u16 = 0x1b1c;
@@ -17,6 +18,7 @@ const PRODUCT_ID: u16 = 0x0c04;
 enum Error {
     InvalidRegister(u8),
     InvalidOpCode(u8),
+    ReadError(hidapi::HidError),
 }
 
 impl fmt::Display for Error {
@@ -24,6 +26,7 @@ impl fmt::Display for Error {
         match *self {
             Error::InvalidRegister(n) => write!(f, "Invalid register byte: 0x{:02x}", n),
             Error::InvalidOpCode(n) => write!(f, "Invalid opcode: 0x{:02x}", n),
+            Error::ReadError(ref err) => write!(f, "Error reading from USB device: {}", err)
         }
     }
 }
@@ -33,6 +36,7 @@ impl error::Error for Error {
         match *self {
             Error::InvalidRegister(_) => "Invalid register byte found",
             Error::InvalidOpCode(_) => "Invalid opcode byte found",
+            Error::ReadError(ref err) => err,
         }
     }
 
@@ -145,7 +149,7 @@ impl TryFrom<u8> for Register {
 
 impl fmt::Display for Register {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}(0x{:02x})", self, *self as u8)
+        write!(f, "{:?}(0x{:02x})", self, u8::from(*self))
     }
 }
 
@@ -155,13 +159,13 @@ enum OpCode {
     ReadOneByte,
     WriteTwoBytes,
     ReadTwoBytes,
-    WriteThreeBytes,
-    ReadThreeBytes,
+    WriteManyBytes,
+    ReadManyBytes,
 }
 
 impl fmt::Display for OpCode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "0x{:02x}", *self as u8)
+        write!(f, "{:?}(0x{:02x})", self, u8::from(*self))
     }
 }
 
@@ -172,8 +176,8 @@ impl From<OpCode> for u8 {
             OpCode::ReadOneByte     => 0x07,
             OpCode::WriteTwoBytes   => 0x08,
             OpCode::ReadTwoBytes    => 0x09,
-            OpCode::WriteThreeBytes => 0x0a,
-            OpCode::ReadThreeBytes  => 0x0b
+            OpCode::WriteManyBytes => 0x0a,
+            OpCode::ReadManyBytes  => 0x0b
         }
     }
 }
@@ -187,8 +191,8 @@ impl TryFrom<u8> for OpCode {
             0x07 => Ok(OpCode::ReadOneByte),
             0x08 => Ok(OpCode::WriteTwoBytes),
             0x09 => Ok(OpCode::ReadTwoBytes),
-            0x0a => Ok(OpCode::WriteThreeBytes),
-            0x0b => Ok(OpCode::ReadThreeBytes),
+            0x0a => Ok(OpCode::WriteManyBytes),
+            0x0b => Ok(OpCode::ReadManyBytes),
             n => Err(Error::InvalidOpCode(n))
         }
     }
@@ -226,27 +230,29 @@ impl fmt::Display for FanMode {
 }
 
 fn main() {
-    //let api = hidapi::HidApi::new().expect("Failed to create API instance");
+    let api = hidapi::HidApi::new().expect("Failed to create API instance");
 
-    //let mut cooler = Cooler::open(&api, VENDOR_ID, PRODUCT_ID).expect("BOOM");
+    let mut cooler = Cooler::open(&api, VENDOR_ID, PRODUCT_ID).expect("BOOM");
 
     let op = CoolerOp {
-        op_code: OpCode::ReadOneByte,
-        register: Register::DeviceId,
-        data: vec![],
+        op_code: OpCode::ReadManyBytes,
+        register: Register::ProductName,
+        data: vec![32u8], // read 32-byte product name
     };
 
-    println!("{}", op.register)
-    //println!("{}", op);
-    //cooler.write_op(&op);
+    //println!("{}", op.register)
+    println!("{}", op);
+    cooler.write_op(&op);
 
-    //let mut buf = [0u8; 64];
-    //let res = cooler.device.read_timeout(&mut buf[..], 1000).unwrap();
-    //println!("Read {:?} bytes: {:?}", res, &buf[..res]);
+    let op = match cooler.read_response() {
+        Ok(op) => op,
+        Err(e) => panic!("{}", e)
+    };
 
-    //println!("Product ID: {:?}", String::from_utf8_lossy(&buf[2..7]))
+    println!("Product ID: {:?}", String::from_utf8_lossy(&op.data[1..6]))
 }
 
+#[derive(Debug)]
 struct CoolerOp {
     op_code: OpCode,
     register: Register,
@@ -260,18 +266,18 @@ impl CoolerOp {
 
     fn to_vec(&self) -> Vec<u8> {
         let mut data = self.data.clone();
-        let mut buf = vec![self.op_code as u8, self.register as u8];
+        let mut buf = vec![u8::from(self.op_code), u8::from(self.register)];
         buf.append(&mut data);
         return buf;
     }
 
-    //fn from_vec(v: Vec<u8>) -> Self {
-    //    return Self {
-    //        op_code: OpCode::try_from(v[0] as u8).unwrap(),
-    //        register: Register::try_from(v[1] as u8).unwrap(),
-    //        data: v[2..]
-    //    }
-    //}
+    fn from_vec(v: Vec<u8>) -> Self {
+        return Self {
+            op_code: OpCode::try_from(v[0] as u8).unwrap(),
+            register: Register::try_from(v[1] as u8).unwrap(),
+            data: v[2..].to_vec()
+        }
+    }
 }
 
 impl fmt::Display for CoolerOp {
@@ -288,7 +294,7 @@ struct Cooler<'a> {
 impl<'a> Cooler<'a> {
     fn open(api: &'a hidapi::HidApi, vendor_id: u16, product_id: u16) -> Result<Self, hidapi::HidError> {
         match api.open(vendor_id, product_id) {
-            Ok(device) => Ok(Cooler {device: device, last_id: 0}),
+            Ok(device) => Ok(Cooler {device: device, last_id: 9}),
             Err(e) => Err(e)
         }
     }
@@ -308,11 +314,11 @@ impl<'a> Cooler<'a> {
         }
     }
 
-    //fn read_response(&self) -> Result<CoolerOp, hidapi::HidError> {
-    //    let mut buf = [0u8; 64];
-    //    return match self.device.read_timeout(&mut buf[..], 1000) {
-    //        Ok(size) => CoolerOp::from_vec(buf),
-    //        Err(e) => println!("Error reading: {:?}", e)
-    //    }
-    //}
+    fn read_response(&self) -> Result<CoolerOp, Error> {
+        let mut buf = [0u8; 64];
+        return match self.device.read_timeout(&mut buf[..], 1000) {
+            Ok(_) => Ok(CoolerOp::from_vec(buf.to_vec())),
+            Err(e) => Err(Error::ReadError(e))
+        }
+    }
 }
