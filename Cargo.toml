@@ -1,0 +1,9 @@
+[package]
+name = "corsair"
+version = "0.1.0"
+authors = ["David Goodlad <david@goodlad.net>"]
+
+[dependencies]
+libusb = "0.3"
+hidapi = "0.4.1"
+hex-slice = "0.1.0"
