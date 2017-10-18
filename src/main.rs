@@ -218,7 +218,7 @@ enum LedMode {
 
 impl fmt::Display for LedMode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "0x{:02x}", *self as u8)
+        write!(f, "{:?}(0x{:02x})", self, u8::from(*self))
     }
 }
 
@@ -260,7 +260,7 @@ enum FanMode {
 
 impl fmt::Display for FanMode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "0x{:02x}", *self as u8)
+        write!(f, "{:?}(0x{:02x})", self, u8::from(*self))
     }
 }
 
@@ -301,18 +301,25 @@ fn main() {
     let mut cooler = Cooler::open(&api, VENDOR_ID, PRODUCT_ID).expect("BOOM");
 
     let op = CoolerOp {
-        op_code: OpCode::ReadManyBytes,
-        register: Register::ProductName,
-        data: vec![32u8], // read 32-byte product name
+        op_code: OpCode::WriteOneByte,
+        register: Register::FanSelect,
+        data: vec![0u8],
     };
-
-    println!("{}", op);
+    println!("Writing {}", op);
     cooler.write_op(&op);
+    let res = cooler.read_response().unwrap();
+    println!("Got {}", res);
 
-    let op = match cooler.read_response() {
-        Ok(op) => op,
-        Err(e) => panic!("{}", e)
+
+    let op = CoolerOp {
+        op_code: OpCode::ReadTwoBytes,
+        register: Register::FanReadRPM,
+        data: vec![]
     };
+    println!("Writing {}", op);
+    cooler.write_op(&op);
+    let res = cooler.read_response().unwrap();
+    println!("Got {}", res);
 }
 
 #[derive(Debug)]
@@ -335,9 +342,10 @@ impl CoolerOp {
     }
 
     fn from_vec(v: Vec<u8>) -> Self {
+        println!("{:?}", v);
         return Self {
-            op_code: OpCode::try_from(v[0] as u8).unwrap(),
-            register: Register::try_from(v[1] as u8).unwrap(),
+            op_code: OpCode::try_from(v[0]).unwrap(),
+            register: Register::try_from(v[1]).unwrap(),
             data: v[2..].to_vec()
         }
     }
@@ -372,7 +380,7 @@ impl<'a> Cooler<'a> {
         let mut buf = vec![len as u8, id as u8];
         buf.extend(&data);
         match self.device.write(&buf[..]) {
-            Ok(size) => println!("Wrote {:?} bytes: {:?}", size, buf),
+            Ok(size) => println!("Wrote {:?} bytes: {:x}", size, buf.as_hex()),
             Err(e) => println!("Error writing op: {:?}", e)
         }
     }
@@ -380,7 +388,10 @@ impl<'a> Cooler<'a> {
     fn read_response(&self) -> Result<CoolerOp, Error> {
         let mut buf = [0u8; 64];
         return match self.device.read_timeout(&mut buf[..], 1000) {
-            Ok(_) => Ok(CoolerOp::from_vec(buf.to_vec())),
+            Ok(size) => {
+                println!("Read {:?} bytes: {:x}", size, buf.as_hex());
+                Ok(CoolerOp::from_vec(buf[1..].to_vec()))
+            },
             Err(e) => Err(Error::ReadError(e))
         }
     }
