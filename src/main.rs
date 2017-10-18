@@ -9,6 +9,11 @@ use std::fmt;
 use hex_slice::AsHex;
 use std::convert::TryFrom;
 
+#[macro_use]
+extern crate nom;
+
+mod parser;
+
 // H110i
 const VENDOR_ID: u16 = 0x1b1c;
 const PRODUCT_ID: u16 = 0x0c04;

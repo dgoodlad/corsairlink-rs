@@ -7,3 +7,4 @@ authors = ["David Goodlad <david@goodlad.net>"]
 libusb = "0.3"
 hidapi = "0.4.1"
 hex-slice = "0.1.0"
+nom = "^3.2"
