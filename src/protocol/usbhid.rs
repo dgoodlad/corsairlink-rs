@@ -57,18 +57,46 @@ impl<R: Register, V: Value<R>> Command<R,V> {
         buf[1] = self.register().into();
 
         match self {
-            &Command::Read(_) => Some(2),
+            &Command::Read(register) => {
+                match self.opcode() {
+                    Opcode::ReadByte => Some(2),
+                    Opcode::ReadWord => Some(2),
+                    Opcode::ReadBlock => {
+                        buf[2] = register.size() as u8;
+                        Some(3)
+                    },
+                    _ => None
+                }
+            },
             &Command::Write(register, ref value) => {
-                value.encode(buf[2..].as_mut());
-                Some(2 + register.size())
+                match self.opcode() {
+                    Opcode::WriteByte => {
+                        value.encode(&mut buf[2..3]);
+                        Some(3)
+                    },
+                    Opcode::WriteWord => {
+                        value.encode(&mut buf[2..4]);
+                        Some(4)
+                    },
+                    Opcode::WriteBlock => {
+                        buf[2] = register.size() as u8;
+                        value.encode(&mut buf[3..3+register.size()]);
+                        Some(2 + register.size())
+                    },
+                    _ => None
+                }
             }
         }
     }
 
     fn len(&self) -> usize {
-        match self {
-            &Command::Read(_) => 2,
-            &Command::Write(register, _) => 2 + register.size(),
+        match self.opcode() {
+            Opcode::ReadByte => 2,
+            Opcode::ReadWord => 2,
+            Opcode::ReadBlock => 3,
+            Opcode::WriteByte => 3,
+            Opcode::WriteWord => 4,
+            Opcode::WriteBlock => 3 + self.register().size(),
         }
     }
 }
@@ -90,7 +118,7 @@ impl<R: Register, V: Value<R>> TxPacket<R,V> {
     pub fn encode(self: &TxPacket<R,V>) -> Option<Vec<u8>> {
         let len = self.len();
         let mut buf: Vec<u8> = vec![0; len];
-        buf[0] = len as u8;
+        buf[0] = len as u8 - 1;
 
         let mut i = 1;
         let mut command_id = self.first_command_id;
