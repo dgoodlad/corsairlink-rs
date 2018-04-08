@@ -32,9 +32,13 @@ impl<'a> Device<'a> {
         let mut buf: Vec<u8> = vec![0u8; protocol::PACKET_SIZE];
         self.read(buf.as_mut_slice())?;
         println!("Received response: {:x}", buf.as_hex());
-        if buf[0] == 101 {
+        if buf[0] != encoded[1] {
             self.read(buf.as_mut_slice())?;
             println!("Received response: {:x}", buf.as_hex());
+            if buf[0] != encoded[1] {
+                self.read(buf.as_mut_slice())?;
+                println!("Received response: {:x}", buf.as_hex());
+            }
         }
         protocol::RxPacket::decode(packet, &buf[..])
     }
