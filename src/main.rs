@@ -12,9 +12,7 @@ fn main() {
     println!("Cooler: {:?}", cooler);
 
     cooler.poll_temperatures().unwrap();
-    println!("Cooler: {:?}", cooler);
-
-    println!("0x{:04x}: {}, {}", cooler.temperatures[0].raw(), cooler.temperatures[0].simple(), cooler.temperatures[0].floating());
+    println!("Temperature: {}", cooler.temperatures[0]);
 
     cooler.poll_fans().unwrap();
     println!("Cooler: {:?}", cooler);

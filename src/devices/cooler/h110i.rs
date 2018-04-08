@@ -1,3 +1,4 @@
+use std::fmt;
 use errors::*;
 
 pub use backends::usbhid as backend;
@@ -10,36 +11,30 @@ use byteorder::{ByteOrder, LittleEndian};
 pub const VENDOR_ID: u16 = 0x1b1c;
 pub const PRODUCT_ID: u16 = 0x0c04;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Temperature(u16);
 
 impl Temperature {
-    pub fn raw(&self) -> u16 {
-        self.0
-    }
-
-    pub fn simple(&self) -> f64 {
+    fn degrees_c(&self) -> f64 {
         self.0 as f64 / 256.0
     }
+}
 
-    pub fn floating(&self) -> f64 {
-        let bytes = self.0;
-        let mut exponent = (bytes >> 11) as i32;
-        let mut fraction = (bytes & 0b111_1111_1111) as i32;
+impl From<Temperature> for u16 {
+    fn from(t: Temperature) -> u16 {
+        t.0
+    }
+}
 
-        if exponent > 15 {
-            exponent = -(32 - exponent);
-        }
+impl From<Temperature> for f64 {
+    fn from(t: Temperature) -> f64 {
+        t.degrees_c()
+    }
+}
 
-        if fraction > 1023 {
-            fraction = -(2048 - fraction);
-        }
-
-        if fraction & 1 == 1 {
-            fraction = fraction + 1;
-        }
-
-        fraction as f64 * (exponent as f64).exp2()
+impl fmt::Display for Temperature {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}°C", self.degrees_c())
     }
 }
 
