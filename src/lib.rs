@@ -3,6 +3,8 @@
 #[macro_use]
 extern crate error_chain;
 
+extern crate hex_slice;
+
 pub mod errors {
     use std::string;
 

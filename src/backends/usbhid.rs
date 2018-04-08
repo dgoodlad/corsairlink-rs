@@ -1,5 +1,7 @@
 extern crate hidapi;
 
+use hex_slice::AsHex;
+
 use std::fmt;
 use errors::*;
 use protocol::usbhid as protocol;
@@ -23,16 +25,16 @@ impl<'a> Device<'a> {
     }
 
     pub fn write_packet<R: protocol::Register, V: protocol::Value<R>>(&self, packet: protocol::TxPacket<R,V>) -> Result<protocol::RxPacket<R, V>> {
-        let mut encoded = packet.encode().unwrap();
-        println!("Writing packet: {:?}", encoded);
+        let encoded = packet.encode().unwrap();
+        println!("Writing packet: {:x}", encoded.as_hex());
         self.dev.write(&encoded[..])?;
 
         let mut buf: Vec<u8> = vec![0u8; protocol::PACKET_SIZE];
         self.read(buf.as_mut_slice())?;
-        println!("Received response: {:?}", buf);
+        println!("Received response: {:x}", buf.as_hex());
         if buf[0] == 101 {
             self.read(buf.as_mut_slice())?;
-            println!("Received response: {:?}", buf);
+            println!("Received response: {:x}", buf.as_hex());
         }
         protocol::RxPacket::decode(packet, &buf[..])
     }
