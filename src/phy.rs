@@ -2,7 +2,6 @@ extern crate hidapi;
 
 const READ_TIMEOUT: i32 = 1000;
 const PACKET_SIZE: usize = 64;
-const FIRST_COMMAND_ID: u8 = 20;
 
 type CorsairResult<T> = hidapi::HidResult<T>;
 
@@ -35,30 +34,8 @@ impl<'a> CorsairDevice<'a> {
         self.dev.read_timeout(buf, READ_TIMEOUT)
     }
 
-    pub fn encode_commands<T: Encodable>(&self, commands: &[T]) -> Option<Vec<u8>> {
-        let mut buf: Vec<u8> = vec!(0; PACKET_SIZE);
-        let mut i = 1;
-        let command_id = FIRST_COMMAND_ID;
-
-        for c in commands {
-            buf[i] = command_id + i as u8;
-            i += 1;
-            match buf.get_mut(i .. i + c.len() + 1) {
-                Some(slice) => c.encode_into(slice),
-                None => return None
-            };
-            i += c.len();
-        }
-
-        buf[0] = i as u8;
-
-        Some(buf)
-    }
-
-    pub fn write_commands<T: Encodable>(&self, commands: &[T]) -> CorsairResult<usize> {
-        match self.encode_commands(commands) {
-            Some(data) => self.write(&data[..]),
-            None => Err("Failed to encode commands")
-        }
+    pub fn write_packet<T: Encodable>(&self, packet: &T) -> CorsairResult<usize> {
+        let data = packet.encode();
+        self.write(&data[..])
     }
 }
