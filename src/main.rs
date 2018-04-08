@@ -11,6 +11,16 @@ fn main() {
     cooler.get_metadata().unwrap();
     println!("Cooler: {:?}", cooler);
 
+    cooler.poll_temperatures().unwrap();
+    println!("Cooler: {:?}", cooler);
+
+    println!("0x{:04x}: {}, {}", cooler.temperatures[0].raw(), cooler.temperatures[0].simple(), cooler.temperatures[0].floating());
+
+    cooler.poll_fans().unwrap();
+    println!("Cooler: {:?}", cooler);
+
+    println!("{}, {}, {}", cooler.fan_speeds[0], cooler.fan_speeds[1], cooler.fan_speeds[2]);
+
     ////let dev = phy::CorsairDevice::new(hiddev);
 
     //let commands = vec![

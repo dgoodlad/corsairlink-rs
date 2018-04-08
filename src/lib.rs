@@ -3,6 +3,7 @@
 #[macro_use]
 extern crate error_chain;
 
+extern crate byteorder;
 extern crate hex_slice;
 
 pub mod errors {

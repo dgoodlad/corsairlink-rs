@@ -1,14 +1,47 @@
+use errors::*;
+
 pub use backends::usbhid as backend;
 use protocol::usbhid;
+use protocol::usbhid::Command;
+use protocol::usbhid::TxPacket;
+
+use byteorder::{ByteOrder, LittleEndian};
 
 pub const VENDOR_ID: u16 = 0x1b1c;
 pub const PRODUCT_ID: u16 = 0x0c04;
 
-pub use protocol::usbhid::Command;
-pub use protocol::usbhid::TxPacket;
-pub use protocol::usbhid::RxPacket;
+#[derive(Debug)]
+pub struct Temperature(u16);
 
-use errors::*;
+impl Temperature {
+    pub fn raw(&self) -> u16 {
+        self.0
+    }
+
+    pub fn simple(&self) -> f64 {
+        self.0 as f64 / 256.0
+    }
+
+    pub fn floating(&self) -> f64 {
+        let bytes = self.0;
+        let mut exponent = (bytes >> 11) as i32;
+        let mut fraction = (bytes & 0b111_1111_1111) as i32;
+
+        if exponent > 15 {
+            exponent = -(32 - exponent);
+        }
+
+        if fraction > 1023 {
+            fraction = -(2048 - fraction);
+        }
+
+        if fraction & 1 == 1 {
+            fraction = fraction + 1;
+        }
+
+        fraction as f64 * (exponent as f64).exp2()
+    }
+}
 
 #[derive(Debug)]
 pub struct Device<'a> {
@@ -18,8 +51,11 @@ pub struct Device<'a> {
     firmware_version: String,
     product_name: String,
 
-    fan_speeds: Vec<u16>,
-    temperatures: Vec<f64>,
+    temp_sensor_count: u8,
+    fan_count: u8,
+
+    pub temperatures: Vec<Temperature>,
+    pub fan_speeds: Vec<u16>,
 }
 
 impl<'a> Device<'a> {
@@ -31,8 +67,11 @@ impl<'a> Device<'a> {
             firmware_version: "".to_string(),
             product_name: "".to_string(),
 
-            fan_speeds: vec![],
+            temp_sensor_count: 0,
+            fan_count: 0,
+
             temperatures: vec![],
+            fan_speeds: vec![],
         }
     }
 
@@ -41,6 +80,8 @@ impl<'a> Device<'a> {
             Command::Read(Register::DeviceId),
             Command::Read(Register::FirmwareVersion),
             Command::Read(Register::ProductName),
+            Command::Read(Register::TempSensorCount),
+            Command::Read(Register::FanCount),
         ];
 
         let txpacket = TxPacket::new(20, commands);
@@ -51,9 +92,51 @@ impl<'a> Device<'a> {
                 RegisterValue::DeviceId(device_id) => self.device_id = device_id,
                 RegisterValue::FirmwareVersion(s) => self.firmware_version = s,
                 RegisterValue::ProductName(s) => self.product_name = s,
+                RegisterValue::TempSensorCount(i) => self.temp_sensor_count = i,
+                RegisterValue::FanCount(i) => self.fan_count = i,
                 _ => (),
             }
         };
+
+        Ok(())
+    }
+
+    pub fn poll_temperatures(&mut self) -> Result<()> {
+        let mut commands: Vec<Command<Register, RegisterValue>> = Vec::new();
+        for i in 0..self.temp_sensor_count {
+            commands.push(Command::Write(Register::TempSensorSelect, RegisterValue::TempSensorSelect(i as u8)));
+            commands.push(Command::Read(Register::TempSensorValue));
+        }
+
+        let txpacket = TxPacket::new(20, commands);
+        let rxpacket = self.backend.write_packet(txpacket)?;
+
+        for value in rxpacket.read_values() {
+            match value {
+                RegisterValue::TempSensorValue(lb, hb) => self.temperatures.push(Temperature(LittleEndian::read_u16(&[lb, hb]))),
+                _ => (),
+            };
+        }
+
+        Ok(())
+    }
+
+    pub fn poll_fans(&mut self) -> Result<()> {
+        for i in 0..self.fan_count {
+            let mut commands: Vec<Command<Register, RegisterValue>> = Vec::new();
+            commands.push(Command::Write(Register::FanSelect, RegisterValue::FanSelect(i as u8)));
+            commands.push(Command::Read(Register::FanRPM));
+
+            let txpacket = TxPacket::new(20, commands);
+            let rxpacket = self.backend.write_packet(txpacket)?;
+
+            for value in rxpacket.read_values() {
+                match value {
+                    RegisterValue::FanRPM(rpm) => self.fan_speeds.push(rpm),
+                    _ => (),
+                };
+            }
+        }
 
         Ok(())
     }
@@ -66,12 +149,20 @@ pub enum Register {
     FirmwareVersion = 0x01,
     ProductName = 0x02,
     Status = 0x03,
+
     LedSelect = 0x04,
+    LedCount = 0x05,
+    // ...
 
     TempSensorSelect = 0x0c,
     TempSensorCount = 0x0d,
     TempSensorValue = 0x0e,
     TempSensorLimit = 0x0f,
+
+    FanSelect = 0x10,
+    FanCount = 0x11,
+    // ...
+    FanRPM = 0x16,
 }
 
 impl Into<u8> for Register {
@@ -85,12 +176,18 @@ impl usbhid::Register for Register {
             &Register::FirmwareVersion => 2,
             &Register::ProductName => 8,
             &Register::Status => 1,
+
             &Register::LedSelect => 1,
+            &Register::LedCount => 1,
 
             &Register::TempSensorSelect => 1,
             &Register::TempSensorCount => 1,
             &Register::TempSensorValue => 2,
             &Register::TempSensorLimit => 2,
+
+            &Register::FanSelect => 1,
+            &Register::FanCount => 1,
+            &Register::FanRPM => 2,
         }
     }
 }
@@ -101,12 +198,18 @@ pub enum RegisterValue {
     FirmwareVersion(String),
     ProductName(String),
     Status(u8),
+
     LedSelect(u8),
+    LedCount(u8),
 
     TempSensorSelect(u8),
     TempSensorCount(u8),
     TempSensorValue(u8,u8),
     TempSensorLimit(u8,u8),
+
+    FanSelect(u8),
+    FanCount(u8),
+    FanRPM(u16),
 }
 
 impl RegisterValue {
@@ -131,12 +234,18 @@ impl usbhid::Value<Register> for RegisterValue {
                 }
             },
             Register::Status => Ok(RegisterValue::Status(data[0])),
+
             Register::LedSelect => Ok(RegisterValue::LedSelect(data[0])),
+            Register::LedCount => Ok(RegisterValue::LedCount(data[0])),
 
             Register::TempSensorSelect => Ok(RegisterValue::TempSensorSelect(data[0])),
             Register::TempSensorCount => Ok(RegisterValue::TempSensorCount(data[0])),
             Register::TempSensorValue => Ok(RegisterValue::TempSensorValue(data[0], data[1])),
             Register::TempSensorLimit => Ok(RegisterValue::TempSensorLimit(data[0], data[1])),
+
+            Register::FanSelect => Ok(RegisterValue::FanSelect(data[0])),
+            Register::FanCount => Ok(RegisterValue::FanCount(data[0])),
+            Register::FanRPM => Ok(RegisterValue::FanRPM(LittleEndian::read_u16(&data[0..2]))),
         }
     }
 
