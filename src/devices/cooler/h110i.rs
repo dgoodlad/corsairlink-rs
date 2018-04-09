@@ -2,6 +2,7 @@ use std::fmt;
 use errors::*;
 
 pub use backends::usbhid as backend;
+use libusb;
 use protocol::usbhid;
 use protocol::usbhid::Command;
 use protocol::usbhid::TxPacket;
@@ -54,6 +55,11 @@ pub struct Device<'a> {
 }
 
 impl<'a> Device<'a> {
+    pub fn open(context: &'a libusb::Context) -> Result<Device<'a>> {
+        let dev = backend::Device::open(context, VENDOR_ID, PRODUCT_ID)?;
+        Ok(Self::new(dev))
+    }
+
     pub fn new(backend: backend::Device) -> Device {
         Device {
             backend,

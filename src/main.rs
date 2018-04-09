@@ -11,11 +11,8 @@ quick_main!(run);
 
 fn run() -> Result<()> {
     let context = libusb::Context::new().unwrap();
-    let device = h110i::backend::Device::open(&context, h110i::VENDOR_ID, h110i::PRODUCT_ID).chain_err(|| "Failed to open USB device")?;
 
-    println!("{:?}", device);
-
-    let mut cooler = h110i::Device::new(device);
+    let mut cooler = h110i::Device::open(&context)?;
     cooler.get_metadata()?;
     println!("Cooler: {:?}", cooler);
 
