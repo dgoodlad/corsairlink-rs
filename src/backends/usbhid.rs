@@ -1,16 +1,24 @@
-extern crate hidapi;
-
 use hex_slice::AsHex;
 
 use std::fmt;
+use std::time::Duration;
 use errors::*;
 use protocol::usbhid as protocol;
+use libusb;
 
-const DEFAULT_READ_TIMEOUT: i32 = 1000;
+const DEFAULT_READ_TIMEOUT: u64 = 1000;
+const DEFAULT_WRITE_TIMEOUT: u64 = 1000;
+
+const HID_SET_REPORT: u8 = 0x09;
+const HID_REPORT_TYPE_OUTPUT: u16 = 0x02;
+const HID_REPORT_NUMBER: u16 = 0x00;
+const INTERFACE_NUMBER: u16 = 0;
+const INTERRUPT_IN_ENDPOINT: u8 = 0x81;
 
 pub struct Device<'a> {
-    dev: hidapi::HidDevice<'a>,
-    read_timeout: i32,
+    dev: libusb::DeviceHandle<'a>,
+    read_timeout: Duration,
+    write_timeout: Duration,
 }
 
 impl<'a> fmt::Debug for Device<'a> {
@@ -20,14 +28,45 @@ impl<'a> fmt::Debug for Device<'a> {
 }
 
 impl<'a> Device<'a> {
-    pub fn new(dev: hidapi::HidDevice<'a>) -> Device<'a> {
-        Device{dev, read_timeout: DEFAULT_READ_TIMEOUT}
+    pub fn open(context: &'a libusb::Context, vendor_id: u16, product_id: u16) -> Result<Device<'a>> {
+        for mut device in context.devices().unwrap().iter() {
+            let device_desc = device.device_descriptor().unwrap();
+
+            if device_desc.vendor_id() == vendor_id && device_desc.product_id() == product_id {
+                return Ok(Device {
+                    dev: device.open().unwrap(),
+                    read_timeout: Duration::from_millis(DEFAULT_READ_TIMEOUT),
+                    write_timeout: Duration::from_millis(DEFAULT_WRITE_TIMEOUT),
+                })
+            }
+        };
+
+        Err("No device found".into())
+    }
+
+    fn write(&self, data: &[u8]) -> Result<usize> {
+        self.dev.write_control(
+            libusb::request_type(libusb::Direction::Out, libusb::RequestType::Class, libusb::Recipient::Interface),
+            HID_SET_REPORT, // 0x09
+            HID_REPORT_TYPE_OUTPUT << 8 | HID_REPORT_NUMBER,
+            INTERFACE_NUMBER,
+            data,
+            self.write_timeout,
+        ).chain_err(|| "Error writing to USB device")
+    }
+
+    fn read(&self, buf: &mut [u8]) -> Result<usize> {
+        self.dev.read_interrupt(
+            INTERRUPT_IN_ENDPOINT,
+            buf,
+            self.read_timeout
+        ).chain_err(|| "Error reading from USB device")
     }
 
     pub fn write_packet<R: protocol::Register, V: protocol::Value<R>>(&self, packet: protocol::TxPacket<R,V>) -> Result<protocol::RxPacket<R, V>> {
         let encoded = packet.encode().unwrap();
         println!("Writing packet: {:x}", encoded.as_hex());
-        self.dev.write(&encoded[..])?;
+        self.write(&encoded[..])?;
 
         let mut buf: Vec<u8> = vec![0u8; protocol::PACKET_SIZE];
         self.read(buf.as_mut_slice())?;
@@ -41,9 +80,5 @@ impl<'a> Device<'a> {
             }
         }
         protocol::RxPacket::decode(packet, &buf[..])
-    }
-
-    fn read(&self, buf: &mut [u8]) -> hidapi::HidResult<usize> {
-        self.dev.read_timeout(buf, self.read_timeout)
     }
 }

@@ -6,6 +6,8 @@ extern crate error_chain;
 extern crate byteorder;
 extern crate hex_slice;
 
+extern crate libusb;
+
 pub mod errors {
     use std::string;
 
