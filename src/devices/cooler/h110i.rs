@@ -328,7 +328,7 @@ pub enum RegisterValue {
 
 impl RegisterValue {
     fn decode_firmware_version(lb: u8, hb: u8) -> String {
-        format!("{:02x}.{:x}.{:x}", hb, lb & 0xf0 >> 4, lb & 0x0f)
+        format!("{:x}.{:x}.{:02x}", (hb & 0xf0) >> 4, hb & 0x0f, lb)
     }
 }
 
