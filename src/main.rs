@@ -16,13 +16,14 @@ fn run() -> Result<()> {
     cooler.get_metadata()?;
     println!("Cooler: {:?}", cooler);
 
+    cooler.poll_led_modes()?;
     cooler.poll_temperatures()?;
-    println!("Temperature: {}", cooler.temperatures[0]);
-
     cooler.poll_fans()?;
-    println!("Cooler: {:?}", cooler);
 
-    println!("{}, {}, {}", cooler.fan_speeds[0], cooler.fan_speeds[1], cooler.fan_speeds[2]);
+    println!("Temperature: {}", cooler.temperatures[0]);
+    println!("Fan Speeds: {}, {}, {}", cooler.fan_speeds[0], cooler.fan_speeds[1], cooler.fan_speeds[2]);
+    println!("LED Modes: {:?}", cooler.led_modes[0]);
+
 
     Ok(())
 }
