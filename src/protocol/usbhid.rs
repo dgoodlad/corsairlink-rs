@@ -1,3 +1,51 @@
+//! # Corsair Link over USB HID
+//!
+//! The USB HID protocol used by some Corsair Link devices is similar to SMBus,
+//! but operates using raw USB HID reports. The host computer writes 64-byte
+//! packets to report number 0x00, and is expected to follow each write by reading
+//! that same report number, resulting in a 64-byte response.
+//!
+//! All values are little-endian.
+//!
+//! Transmitted packets are structured as follows:
+//!
+//!     LEN <CommandID> <Command> <Command..?> <Zero Padding>
+//!
+//! The first byte is the total length in bytes of the command data contained
+//! in the packet (not including the first len byte). The packet is then
+//! zero-padded to 64 bytes. Each command is prefixed by an identifier in the
+//! range 20..255 inclusive, which is then used to identify responses in the
+//! reply packet.
+//!
+//! Each command is an SMBus-style command, consisting of an opcode, a register,
+//! and optionally some data. The opcodes either read or write from a given
+//! register. The correct opcode should be chosen for a given register, based on
+//! the length of data that register stores. There are opcodes for operating on
+//! single bytes, words (two bytes), or on arbitrary-sized data ("blocks"). When
+//! operating on a block register, a LEN byte is the first byte of the command
+//! data. For example:
+//!
+//!    [0x07 0x00]
+//!      |    \----- Register 0x00: Device ID
+//!      \---------- Opcode 0x06: ReadByte
+//!
+//!    [0x08 0x0f 0x00 0x1e ]
+//!      |    |    \----\----- Little-endian encoded value 0x1e00
+//!      |    \--------------- Register 0x0f: TempSensorLimit
+//!      \-------------------- Opcode 0x08: WriteWord
+//!
+//!    [0x0a 0x0b 0x0c 0x00 0x00 0x00 0x00 ...]
+//!      |    |    |    \----\----\----\----\---- 12 bytes of data
+//!      |    |    \----------------------------- Len 0x0c: 12 byte block
+//!      |    \---------------------------------- Register 0x0b: LedCycleColors
+//!      \--------------------------------------- Opcode 0x0a: WriteBlock
+//!
+//!    [0x0b 0x02 0x08]
+//!      |    |    \---------- Len 0x08: 8 byte block to read
+//!      |    \--------------- Register 0x02: ProductName
+//!      \-------------------- Opcode 0x0b: ReadBlock
+//!
+
 use errors::*;
 
 #[repr(u8)]
