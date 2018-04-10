@@ -371,6 +371,7 @@ impl usbhid::Value<Register> for RegisterValue {
             &RegisterValue::LedSelect(led) => { buf[0] = led; Some(1) },
             &RegisterValue::TempSensorSelect(sensor) => { buf[0] = sensor; Some(1) },
             &RegisterValue::TempSensorLimit(lb,hb) => { buf[0] = lb; buf[1] = hb; Some(2) },
+            &RegisterValue::FanSelect(fan) => { buf[0] = fan; Some(1) },
             _ => None
         }
     }
