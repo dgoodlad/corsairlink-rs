@@ -1,11 +1,11 @@
 #[macro_use]
 extern crate error_chain;
 
-extern crate corsair;
+extern crate corsairlink;
 extern crate libusb;
 
-use corsair::devices::cooler::h110i;
-use corsair::errors::*;
+use corsairlink::devices::cooler::h110i;
+use corsairlink::errors::*;
 
 quick_main!(run);
 
