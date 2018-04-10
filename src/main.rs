@@ -27,8 +27,14 @@ fn run() -> Result<()> {
     println!("LED Cycle Colors: {:?}", cooler.led_cycle_colors[0]);
 
     println!("");
-    println!("Setting color to M A G E N T A");
-    cooler.set_led_color(h110i::RgbColor(255, 0, 255))?;
+    println!("Setting color cycle to magenta, green, blue, white");
+    cooler.set_led_colors(0, [
+        h110i::RgbColor(255, 0, 255),
+        h110i::RgbColor(0, 255, 0),
+        h110i::RgbColor(0, 0, 255),
+        h110i::RgbColor(255, 255, 255),
+    ])?;
+    cooler.set_led_mode(h110i::LedMode::four_color_cycle_mode(7))?;
     cooler.poll_leds()?;
     println!("LED Colors: {:?}", cooler.led_colors[0]);
     println!("LED Cycle Colors: {:?}", cooler.led_cycle_colors[0]);

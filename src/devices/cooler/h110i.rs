@@ -160,13 +160,25 @@ impl<'a> Device<'a> {
         Ok(())
     }
 
-    pub fn set_led_color(&mut self, c: RgbColor) -> Result<()> {
-        let mut colors = self.led_cycle_colors[0].clone();
-        colors[0] = c;
+    pub fn set_led_colors(&mut self, led: u8, colors: [RgbColor; 4]) -> Result<()> {
+        if led > self.led_count {
+            return Err("Invalid led specified".into());
+        }
 
         let mut commands: Vec<Command<Register, RegisterValue>> = Vec::new();
-        commands.push(Command::Write(Register::LedSelect, RegisterValue::LedSelect(0)));
+        commands.push(Command::Write(Register::LedSelect, RegisterValue::LedSelect(led)));
         commands.push(Command::Write(Register::LedCycleColors, RegisterValue::LedCycleColors(colors)));
+
+        let txpacket = TxPacket::new(20, commands);
+        let rxpacket = self.backend.write_packet(txpacket)?;
+
+        Ok(())
+    }
+
+    pub fn set_led_mode(&mut self, mode: LedMode) -> Result<()> {
+        let mut commands: Vec<Command<Register, RegisterValue>> = Vec::new();
+        commands.push(Command::Write(Register::LedSelect, RegisterValue::LedSelect(0)));
+        commands.push(Command::Write(Register::LedMode, RegisterValue::LedMode(mode)));
 
         let txpacket = TxPacket::new(20, commands);
         let rxpacket = self.backend.write_packet(txpacket)?;
@@ -288,7 +300,7 @@ impl TempChannel {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum LedMode {
     Static,
     TwoColorCycle(u8),
@@ -297,6 +309,22 @@ pub enum LedMode {
 }
 
 impl LedMode {
+    pub fn static_mode() -> LedMode {
+        LedMode::Static
+    }
+
+    pub fn two_color_cycle_mode(speed: u8) -> LedMode {
+        LedMode::TwoColorCycle(speed)
+    }
+
+    pub fn four_color_cycle_mode(speed: u8) -> LedMode {
+        LedMode::FourColorCycle(speed)
+    }
+
+    pub fn temperature_mode(channel: TempChannel) -> LedMode {
+        LedMode::Temperature(channel)
+    }
+
     fn decode(data: u8) -> Result<LedMode> {
         match data & 0xf0 {
             0x00 => Ok(LedMode::Static),
@@ -407,6 +435,7 @@ impl usbhid::Value<Register> for RegisterValue {
     fn encode(&self, buf: &mut [u8]) -> Option<usize> {
         match self {
             &RegisterValue::LedSelect(led) => { buf[0] = led; Some(1) },
+            &RegisterValue::LedMode(mode) => { buf[0] = mode.encode(); Some(1) }
             &RegisterValue::LedCycleColors(colors) => {
                 buf[0] = colors[0].0; buf[1] = colors[0].1; buf[2] = colors[0].2;
                 buf[3] = colors[1].0; buf[4] = colors[1].1; buf[5] = colors[1].2;
