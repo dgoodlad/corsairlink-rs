@@ -150,10 +150,13 @@ pub enum RxCommand<R, V> {
 
 impl<R: Register, V: Value<R>> RxCommand<R, V> {
     fn decode_read(register: R, data: &[u8]) -> Result<RxCommand<R, V>> {
-        Ok(RxCommand::Read(
-            register,
-            V::decode(register, data)?
-        ))
+        let buf = match register.size() {
+            1 => &data[0..1],
+            2 => &data[0..2],
+            len @ _ if len == data[0] as usize => &data[1..len+2],
+            _ => return Err("Invalid length byte for block read".into()),
+        };
+        Ok(RxCommand::Read(register, V::decode(register, buf)?))
     }
 
     fn len(&self) -> usize {
