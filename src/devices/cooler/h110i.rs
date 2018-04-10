@@ -52,6 +52,8 @@ pub struct Device<'a> {
     fan_count: u8,
 
     pub led_modes: Vec<LedMode>,
+    pub led_colors: Vec<RgbColor>,
+    pub led_cycle_colors: Vec<[RgbColor; 4]>,
     pub temperatures: Vec<Temperature>,
     pub fan_speeds: Vec<u16>,
 }
@@ -75,6 +77,8 @@ impl<'a> Device<'a> {
             fan_count: 0,
 
             led_modes: vec![],
+            led_colors: vec![],
+            led_cycle_colors: vec![],
             temperatures: vec![],
             fan_speeds: vec![],
         }
@@ -128,22 +132,44 @@ impl<'a> Device<'a> {
         Ok(())
     }
 
-    pub fn poll_led_modes(&mut self) -> Result<()> {
+    pub fn poll_leds(&mut self) -> Result<()> {
         for i in 0..self.led_count {
             let mut commands: Vec<Command<Register, RegisterValue>> = Vec::new();
             commands.push(Command::Write(Register::LedSelect, RegisterValue::FanSelect(i as u8)));
             commands.push(Command::Read(Register::LedMode));
+            commands.push(Command::Read(Register::LedColor));
+            commands.push(Command::Read(Register::LedCycleColors));
 
             let txpacket = TxPacket::new(20, commands);
             let rxpacket = self.backend.write_packet(txpacket)?;
 
+            self.led_modes.clear();
+            self.led_colors.clear();
+            self.led_cycle_colors.clear();
+
             for value in rxpacket.read_values() {
                 match value {
                     RegisterValue::LedMode(mode) => self.led_modes.push(mode),
+                    RegisterValue::LedColor(color) => self.led_colors.push(color),
+                    RegisterValue::LedCycleColors(colors) => self.led_cycle_colors.push(colors),
                     _ => (),
                 }
             }
         }
+
+        Ok(())
+    }
+
+    pub fn set_led_color(&mut self, c: RgbColor) -> Result<()> {
+        let mut colors = self.led_cycle_colors[0].clone();
+        colors[0] = c;
+
+        let mut commands: Vec<Command<Register, RegisterValue>> = Vec::new();
+        commands.push(Command::Write(Register::LedSelect, RegisterValue::LedSelect(0)));
+        commands.push(Command::Write(Register::LedCycleColors, RegisterValue::LedCycleColors(colors)));
+
+        let txpacket = TxPacket::new(20, commands);
+        let rxpacket = self.backend.write_packet(txpacket)?;
 
         Ok(())
     }
@@ -181,9 +207,9 @@ pub enum Register {
     LedCount = 0x05,
     LedMode = 0x06,
     LedColor = 0x07,
-    LedTemperatureColor = 0x08,
-    LedTemperatureModeTemps = 0x09,
-    LedTemperatureModeColors = 0x0a,
+    //LedTemperatureColor = 0x08,
+    //LedTemperatureModeTemps = 0x09,
+    //LedTemperatureModeColors = 0x0a,
     LedCycleColors = 0x0b,
 
     TempSensorSelect = 0x0c,
@@ -193,15 +219,15 @@ pub enum Register {
 
     FanSelect = 0x10,
     FanCount = 0x11,
-    FanMode = 0x012,
-    FanFixedPWM = 0x13,
-    FanFixedRPM = 0x14,
-    FanReportExtTemp = 0x15,
+    //FanMode = 0x012,
+    //FanFixedPWM = 0x13,
+    //FanFixedRPM = 0x14,
+    //FanReportExtTemp = 0x15,
     FanRPM = 0x16,
-    FanMaxRecordedRPM = 0x17,
-    FanUnderSpeedThreshold = 0x18,
-    FanRPMTable = 0x19,
-    FanTempTable = 0x1a,
+    //FanMaxRecordedRPM = 0x17,
+    //FanUnderSpeedThreshold = 0x18,
+    //FanRPMTable = 0x19,
+    //FanTempTable = 0x1a,
 }
 
 impl Into<u8> for Register {
@@ -220,9 +246,9 @@ impl usbhid::Register for Register {
             &Register::LedCount => 1,
             &Register::LedMode => 1,
             &Register::LedColor => 3,
-            &Register::LedTemperatureColor => 2,
-            &Register::LedTemperatureModeTemps => 6,
-            &Register::LedTemperatureModeColors => 9,
+            //&Register::LedTemperatureColor => 2,
+            //&Register::LedTemperatureModeTemps => 6,
+            //&Register::LedTemperatureModeColors => 9,
             &Register::LedCycleColors => 12,
 
             &Register::TempSensorSelect => 1,
@@ -231,16 +257,16 @@ impl usbhid::Register for Register {
             &Register::TempSensorLimit => 2,
 
             &Register::FanSelect => 1,
-            &Register::FanMode => 1,
             &Register::FanCount => 1,
-            &Register::FanFixedPWM => 1,
-            &Register::FanFixedRPM => 2,
-            &Register::FanReportExtTemp => 2,
+            //&Register::FanMode => 1,
+            //&Register::FanFixedPWM => 1,
+            //&Register::FanFixedRPM => 2,
+            //&Register::FanReportExtTemp => 2,
             &Register::FanRPM => 2,
-            &Register::FanMaxRecordedRPM => 2,
-            &Register::FanUnderSpeedThreshold => 2,
-            &Register::FanRPMTable => 10,
-            &Register::FanTempTable => 10,
+            //&Register::FanMaxRecordedRPM => 2,
+            //&Register::FanUnderSpeedThreshold => 2,
+            //&Register::FanRPMTable => 10,
+            //&Register::FanTempTable => 10,
         }
     }
 }
@@ -305,6 +331,9 @@ impl LedMode {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct RgbColor(pub u8, pub u8, pub u8);
+
 #[derive(Clone, Debug)]
 pub enum RegisterValue {
     DeviceId(u8),
@@ -315,6 +344,8 @@ pub enum RegisterValue {
     LedSelect(u8),
     LedCount(u8),
     LedMode(LedMode),
+    LedColor(RgbColor),
+    LedCycleColors([RgbColor; 4]),
 
     TempSensorSelect(u8),
     TempSensorCount(u8),
@@ -352,6 +383,13 @@ impl usbhid::Value<Register> for RegisterValue {
             Register::LedSelect => Ok(RegisterValue::LedSelect(data[0])),
             Register::LedCount => Ok(RegisterValue::LedCount(data[0])),
             Register::LedMode => Ok(RegisterValue::LedMode(LedMode::decode(data[0])?)),
+            Register::LedColor => Ok(RegisterValue::LedColor(RgbColor(data[0], data[1], data[2]))),
+            Register::LedCycleColors => Ok(RegisterValue::LedCycleColors([
+                RgbColor(data[0], data[1], data[2]),
+                RgbColor(data[3], data[4], data[5]),
+                RgbColor(data[6], data[7], data[8]),
+                RgbColor(data[9], data[10], data[11]),
+            ])),
 
             Register::TempSensorSelect => Ok(RegisterValue::TempSensorSelect(data[0])),
             Register::TempSensorCount => Ok(RegisterValue::TempSensorCount(data[0])),
@@ -362,16 +400,24 @@ impl usbhid::Value<Register> for RegisterValue {
             Register::FanCount => Ok(RegisterValue::FanCount(data[0])),
             Register::FanRPM => Ok(RegisterValue::FanRPM(LittleEndian::read_u16(&data[0..2]))),
 
-            _ => Err("Unhandled register".into()),
+            //_ => Err("Unhandled register".into()),
         }
     }
 
     fn encode(&self, buf: &mut [u8]) -> Option<usize> {
         match self {
             &RegisterValue::LedSelect(led) => { buf[0] = led; Some(1) },
+            &RegisterValue::LedCycleColors(colors) => {
+                buf[0] = colors[0].0; buf[1] = colors[0].1; buf[2] = colors[0].2;
+                buf[3] = colors[1].0; buf[4] = colors[1].1; buf[5] = colors[1].2;
+                buf[6] = colors[2].0; buf[7] = colors[2].1; buf[8] = colors[2].2;
+                buf[9] = colors[3].0; buf[10] = colors[3].1; buf[11] = colors[3].2;
+                Some(12)
+            },
             &RegisterValue::TempSensorSelect(sensor) => { buf[0] = sensor; Some(1) },
             &RegisterValue::TempSensorLimit(lb,hb) => { buf[0] = lb; buf[1] = hb; Some(2) },
             &RegisterValue::FanSelect(fan) => { buf[0] = fan; Some(1) },
+
             _ => None
         }
     }

@@ -16,14 +16,22 @@ fn run() -> Result<()> {
     cooler.get_metadata()?;
     println!("Cooler: {:?}", cooler);
 
-    cooler.poll_led_modes()?;
+    cooler.poll_leds()?;
     cooler.poll_temperatures()?;
     cooler.poll_fans()?;
 
     println!("Temperature: {}", cooler.temperatures[0]);
     println!("Fan Speeds: {}, {}, {}", cooler.fan_speeds[0], cooler.fan_speeds[1], cooler.fan_speeds[2]);
     println!("LED Modes: {:?}", cooler.led_modes[0]);
+    println!("LED Colors: {:?}", cooler.led_colors[0]);
+    println!("LED Cycle Colors: {:?}", cooler.led_cycle_colors[0]);
 
+    println!("");
+    println!("Setting color to M A G E N T A");
+    cooler.set_led_color(h110i::RgbColor(255, 0, 255))?;
+    cooler.poll_leds()?;
+    println!("LED Colors: {:?}", cooler.led_colors[0]);
+    println!("LED Cycle Colors: {:?}", cooler.led_cycle_colors[0]);
 
     Ok(())
 }
