@@ -12,7 +12,7 @@ const DEFAULT_WRITE_TIMEOUT: u64 = 1000;
 const HID_SET_REPORT: u8 = 0x09;
 const HID_REPORT_TYPE_OUTPUT: u16 = 0x02;
 const HID_REPORT_NUMBER: u16 = 0x00;
-const INTERFACE_NUMBER: u16 = 0;
+const INTERFACE_NUMBER: u8 = 0;
 const INTERRUPT_IN_ENDPOINT: u8 = 0x81;
 
 pub struct Device<'a> {
@@ -34,9 +34,10 @@ impl<'a> Device<'a> {
 
             if device_desc.vendor_id() == vendor_id && device_desc.product_id() == product_id {
                 let mut handle = device.open().unwrap();
-                if handle.kernel_driver_active(INTERFACE_NUMBER as u8)? {
-                    handle.detach_kernel_driver(INTERFACE_NUMBER as u8)?;
+                if handle.kernel_driver_active(INTERFACE_NUMBER)? {
+                    handle.detach_kernel_driver(INTERFACE_NUMBER)?;
                 }
+                handle.claim_interface(INTERFACE_NUMBER)?;
 
                 return Ok(Device {
                     dev: handle,
@@ -54,7 +55,7 @@ impl<'a> Device<'a> {
             libusb::request_type(libusb::Direction::Out, libusb::RequestType::Class, libusb::Recipient::Interface),
             HID_SET_REPORT, // 0x09
             HID_REPORT_TYPE_OUTPUT << 8 | HID_REPORT_NUMBER,
-            INTERFACE_NUMBER,
+            INTERFACE_NUMBER as u16,
             data,
             self.write_timeout,
         ).chain_err(|| "Error writing to USB device")
