@@ -33,8 +33,13 @@ impl<'a> Device<'a> {
             let device_desc = device.device_descriptor().unwrap();
 
             if device_desc.vendor_id() == vendor_id && device_desc.product_id() == product_id {
+                let mut handle = device.open().unwrap();
+                if handle.kernel_driver_active(INTERFACE_NUMBER as u8)? {
+                    handle.detach_kernel_driver(INTERFACE_NUMBER as u8)?;
+                }
+
                 return Ok(Device {
-                    dev: device.open().unwrap(),
+                    dev: handle,
                     read_timeout: Duration::from_millis(DEFAULT_READ_TIMEOUT),
                     write_timeout: Duration::from_millis(DEFAULT_WRITE_TIMEOUT),
                 })

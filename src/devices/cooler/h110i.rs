@@ -42,6 +42,7 @@ impl fmt::Display for Temperature {
 #[derive(Debug)]
 pub struct Device<'a> {
     backend: backend::Device<'a>,
+    command_id: u8,
 
     device_id: u8,
     firmware_version: String,
@@ -58,6 +59,14 @@ pub struct Device<'a> {
     pub fan_speeds: Vec<u16>,
 }
 
+fn increment_command_id(command_id: u8, i: u8) -> u8 {
+    if command_id as u64 + i as u64 > 255 {
+        usbhid::FIRST_COMMAND_ID
+    } else {
+        command_id + i
+    }
+}
+
 impl<'a> Device<'a> {
     pub fn open(context: &'a libusb::Context) -> Result<Device<'a>> {
         let dev = backend::Device::open(context, VENDOR_ID, PRODUCT_ID)?;
@@ -67,6 +76,7 @@ impl<'a> Device<'a> {
     pub fn new(backend: backend::Device) -> Device {
         Device {
             backend,
+            command_id: usbhid::FIRST_COMMAND_ID,
 
             device_id: 0,
             firmware_version: "".to_string(),
@@ -84,20 +94,27 @@ impl<'a> Device<'a> {
         }
     }
 
+    fn execute(&mut self, commands: Vec<Command<Register, RegisterValue>>) -> Result<Vec<RegisterValue>> {
+        let command_count = commands.len();
+        let tx = TxPacket::new(self.command_id, commands);
+        let rx = self.backend.write_packet(tx)?;
+
+        self.command_id = increment_command_id(self.command_id, command_count as u8);
+
+        Ok(rx.read_values())
+    }
+
     pub fn get_metadata(&mut self) -> Result<()> {
-        let commands: Vec<Command<Register, RegisterValue>> = vec![
+        let values = self.execute(vec![
             Command::Read(Register::DeviceId),
             Command::Read(Register::FirmwareVersion),
             Command::Read(Register::ProductName),
             Command::Read(Register::LedCount),
             Command::Read(Register::TempSensorCount),
             Command::Read(Register::FanCount),
-        ];
+        ])?;
 
-        let txpacket = TxPacket::new(20, commands);
-        let rxpacket = self.backend.write_packet(txpacket)?;
-
-        for value in rxpacket.read_values() {
+        for value in values {
             match value {
                 RegisterValue::DeviceId(device_id) => self.device_id = device_id,
                 RegisterValue::FirmwareVersion(s) => self.firmware_version = s,
@@ -113,47 +130,43 @@ impl<'a> Device<'a> {
     }
 
     pub fn poll_temperatures(&mut self) -> Result<()> {
-        let mut commands: Vec<Command<Register, RegisterValue>> = Vec::new();
+        let mut commands = Vec::new();
         for i in 0..self.temp_sensor_count {
             commands.push(Command::Write(Register::TempSensorSelect, RegisterValue::TempSensorSelect(i as u8)));
             commands.push(Command::Read(Register::TempSensorValue));
         }
 
-        let txpacket = TxPacket::new(20, commands);
-        let rxpacket = self.backend.write_packet(txpacket)?;
-
-        for value in rxpacket.read_values() {
+        for value in self.execute(commands)? {
             match value {
                 RegisterValue::TempSensorValue(lb, hb) => self.temperatures.push(Temperature(LittleEndian::read_u16(&[lb, hb]))),
                 _ => (),
             };
-        }
+        };
 
         Ok(())
     }
 
     pub fn poll_leds(&mut self) -> Result<()> {
+        let mut commands: Vec<Command<Register, RegisterValue>> = Vec::new();
         for i in 0..self.led_count {
-            let mut commands: Vec<Command<Register, RegisterValue>> = Vec::new();
             commands.push(Command::Write(Register::LedSelect, RegisterValue::FanSelect(i as u8)));
             commands.push(Command::Read(Register::LedMode));
             commands.push(Command::Read(Register::LedColor));
             commands.push(Command::Read(Register::LedCycleColors));
+        }
 
-            let txpacket = TxPacket::new(20, commands);
-            let rxpacket = self.backend.write_packet(txpacket)?;
+        let values = self.execute(commands)?;
 
-            self.led_modes.clear();
-            self.led_colors.clear();
-            self.led_cycle_colors.clear();
+        self.led_modes.clear();
+        self.led_colors.clear();
+        self.led_cycle_colors.clear();
 
-            for value in rxpacket.read_values() {
-                match value {
-                    RegisterValue::LedMode(mode) => self.led_modes.push(mode),
-                    RegisterValue::LedColor(color) => self.led_colors.push(color),
-                    RegisterValue::LedCycleColors(colors) => self.led_cycle_colors.push(colors),
-                    _ => (),
-                }
+        for value in values {
+            match value {
+                RegisterValue::LedMode(mode) => self.led_modes.push(mode),
+                RegisterValue::LedColor(color) => self.led_colors.push(color),
+                RegisterValue::LedCycleColors(colors) => self.led_cycle_colors.push(colors),
+                _ => (),
             }
         }
 
@@ -165,42 +178,35 @@ impl<'a> Device<'a> {
             return Err("Invalid led specified".into());
         }
 
-        let mut commands: Vec<Command<Register, RegisterValue>> = Vec::new();
-        commands.push(Command::Write(Register::LedSelect, RegisterValue::LedSelect(led)));
-        commands.push(Command::Write(Register::LedCycleColors, RegisterValue::LedCycleColors(colors)));
-
-        let txpacket = TxPacket::new(20, commands);
-        let rxpacket = self.backend.write_packet(txpacket)?;
+        self.execute(vec![
+            Command::Write(Register::LedSelect, RegisterValue::LedSelect(led)),
+            Command::Write(Register::LedCycleColors, RegisterValue::LedCycleColors(colors))
+        ])?;
 
         Ok(())
     }
 
     pub fn set_led_mode(&mut self, mode: LedMode) -> Result<()> {
-        let mut commands: Vec<Command<Register, RegisterValue>> = Vec::new();
-        commands.push(Command::Write(Register::LedSelect, RegisterValue::LedSelect(0)));
-        commands.push(Command::Write(Register::LedMode, RegisterValue::LedMode(mode)));
-
-        let txpacket = TxPacket::new(20, commands);
-        let rxpacket = self.backend.write_packet(txpacket)?;
+        self.execute(vec![
+            Command::Write(Register::LedSelect, RegisterValue::LedSelect(0)),
+            Command::Write(Register::LedMode, RegisterValue::LedMode(mode)),
+        ])?;
 
         Ok(())
     }
 
     pub fn poll_fans(&mut self) -> Result<()> {
+        let mut commands: Vec<Command<Register, RegisterValue>> = Vec::new();
         for i in 0..self.fan_count {
-            let mut commands: Vec<Command<Register, RegisterValue>> = Vec::new();
             commands.push(Command::Write(Register::FanSelect, RegisterValue::FanSelect(i as u8)));
             commands.push(Command::Read(Register::FanRPM));
+        }
 
-            let txpacket = TxPacket::new(20, commands);
-            let rxpacket = self.backend.write_packet(txpacket)?;
-
-            for value in rxpacket.read_values() {
-                match value {
-                    RegisterValue::FanRPM(rpm) => self.fan_speeds.push(rpm),
-                    _ => (),
-                };
-            }
+        for value in self.execute(commands)? {
+            match value {
+                RegisterValue::FanRPM(rpm) => self.fan_speeds.push(rpm),
+                _ => (),
+            };
         }
 
         Ok(())

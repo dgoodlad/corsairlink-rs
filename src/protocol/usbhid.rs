@@ -150,7 +150,7 @@ impl<R: Register, V: Value<R>> Command<R,V> {
 }
 
 pub const PACKET_SIZE: usize = 64;
-const FIRST_COMMAND_ID: u8 = 20;
+pub const FIRST_COMMAND_ID: u8 = 20;
 
 #[derive(Debug)]
 pub struct TxPacket<R,V> {

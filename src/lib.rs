@@ -10,10 +10,12 @@ extern crate libusb;
 
 pub mod errors {
     use std::string;
+    use libusb;
 
     error_chain! {
         foreign_links {
             String(string::FromUtf8Error) #[doc = "Error parsing UTF-8 string"];
+            Libusb(libusb::Error) #[doc = "Error from libusb"];
         }
     }
 }
