@@ -57,6 +57,7 @@ pub struct Device<'a> {
     pub led_cycle_colors: Vec<[RgbColor; 4]>,
     pub temperatures: Vec<Temperature>,
     pub fan_speeds: Vec<u16>,
+    pub fan_modes: Vec<FanMode>,
 }
 
 fn increment_command_id(command_id: u8, i: u8) -> u8 {
@@ -91,6 +92,7 @@ impl<'a> Device<'a> {
             led_cycle_colors: vec![],
             temperatures: vec![],
             fan_speeds: vec![],
+            fan_modes: vec![],
         }
     }
 
@@ -200,11 +202,13 @@ impl<'a> Device<'a> {
         for i in 0..self.fan_count {
             commands.push(Command::Write(Register::FanSelect, RegisterValue::FanSelect(i as u8)));
             commands.push(Command::Read(Register::FanRPM));
+            commands.push(Command::Read(Register::FanMode));
         }
 
         for value in self.execute(commands)? {
             match value {
                 RegisterValue::FanRPM(rpm) => self.fan_speeds.push(rpm),
+                RegisterValue::FanMode(mode) => self.fan_modes.push(mode),
                 _ => (),
             };
         }
@@ -237,7 +241,7 @@ pub enum Register {
 
     FanSelect = 0x10,
     FanCount = 0x11,
-    //FanMode = 0x012,
+    FanMode = 0x012,
     //FanFixedPWM = 0x13,
     //FanFixedRPM = 0x14,
     //FanReportExtTemp = 0x15,
@@ -276,7 +280,7 @@ impl usbhid::Register for Register {
 
             &Register::FanSelect => 1,
             &Register::FanCount => 1,
-            //&Register::FanMode => 1,
+            &Register::FanMode => 1,
             //&Register::FanFixedPWM => 1,
             //&Register::FanFixedRPM => 2,
             //&Register::FanReportExtTemp => 2,
@@ -365,6 +369,52 @@ impl LedMode {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct FanMode {
+    profile: FanProfile,
+    fan_detected: bool,
+    four_pin: bool,
+    temp_channel: TempChannel,
+}
+
+impl FanMode {
+    fn decode(data: u8) -> Result<FanMode> {
+        Ok(FanMode {
+            profile: FanProfile::decode(data & 0b0000_1110)?,
+            fan_detected: (data & 0b1000_0000) == 0b1000_0000,
+            four_pin: (data & 0b0000_0001) == 1,
+            temp_channel: TempChannel::decode(data & 0b0111_0000)?,
+        })
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug, Copy, Clone)]
+pub enum FanProfile {
+    FixedPWM = 0x02,
+    FixedRPM = 0x04,
+    ProfileDefault = 0x06,
+    ProfileQuiet = 0x08,
+    ProfileBalanced = 0x0a,
+    ProfilePerformance = 0x0c,
+    Custom = 0x0e,
+}
+
+impl FanProfile {
+    fn decode(data: u8) -> Result<FanProfile> {
+        Ok(match data {
+            0x02 => FanProfile::FixedPWM,
+            0x04 => FanProfile::FixedRPM,
+            0x06 => FanProfile::ProfileDefault,
+            0x08 => FanProfile::ProfileQuiet,
+            0x0a => FanProfile::ProfileBalanced,
+            0x0c => FanProfile::ProfilePerformance,
+            0x0e => FanProfile::Custom,
+            _ => return Err("Invalid Fan Profile".into()),
+        })
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct RgbColor(pub u8, pub u8, pub u8);
 
@@ -388,6 +438,7 @@ pub enum RegisterValue {
 
     FanSelect(u8),
     FanCount(u8),
+    FanMode(FanMode),
     FanRPM(u16),
 }
 
@@ -433,6 +484,7 @@ impl usbhid::Value<Register> for RegisterValue {
             Register::FanSelect => Ok(RegisterValue::FanSelect(data[0])),
             Register::FanCount => Ok(RegisterValue::FanCount(data[0])),
             Register::FanRPM => Ok(RegisterValue::FanRPM(LittleEndian::read_u16(&data[0..2]))),
+            Register::FanMode => Ok(RegisterValue::FanMode(FanMode::decode(data[0])?)),
 
             //_ => Err("Unhandled register".into()),
         }

@@ -22,6 +22,7 @@ fn run() -> Result<()> {
 
     println!("Temperature: {}", cooler.temperatures[0]);
     println!("Fan Speeds: {}, {}, {}", cooler.fan_speeds[0], cooler.fan_speeds[1], cooler.fan_speeds[2]);
+    println!("Fan Modes: {:?}", cooler.fan_modes);
     println!("LED Modes: {:?}", cooler.led_modes[0]);
     println!("LED Colors: {:?}", cooler.led_colors[0]);
     println!("LED Cycle Colors: {:?}", cooler.led_cycle_colors[0]);
